@@ -3,7 +3,104 @@ import cv2
 import mss
 import pytesseract
 import numpy as np
+from mss import mss
+from PIL import Image
 import matplotlib.pyplot as plt
+
+class Vision:
+    def __init__(self):
+        self.static_templates = {
+            'tela': 'prova.jpg',
+            'zen': 'zen.png'
+        }
+        self.templates = { k: cv2.imread(v, 0) for (k, v) in self.static_templates.items() }
+        self.monitor = {'top': 0, 'left': 0, 'width': 1920, 'height': 1080}
+        self.screen = mss()
+        self.frame = None
+
+    def take_screenshot(self):
+        sct_img = self.screen.grab(self.monitor)
+        img = Image.frombytes('RGB', sct_img.size, sct_img.rgb)
+        img = np.array(img)
+        img = self.convert_rgb_to_bgr(img)
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        return img_gray
+
+    def get_image(self, path):
+        return cv2.imread(path, 0)
+
+    def bgr_to_rgb(self, img):
+        b,g,r = cv2.split(img)
+        return cv2.merge([r,g,b])
+
+    def convert_rgb_to_bgr(self, img):
+        return img[:, :, ::-1]
+
+    def match_template(self, img_grayscale, template, threshold=0.9):
+        """
+        Matches template image in a target grayscaled image
+        """
+        res = cv2.matchTemplate(img_grayscale, template, cv2.TM_CCOEFF_NORMED)
+        matches = np.where(res >= threshold)
+        return matches
+
+    def find_template(self, name, image=None, threshold=0.9):
+        if image is None:
+            if self.frame is None:
+                self.refresh_frame()
+
+            image = self.frame
+
+        return self.match_template(
+            image,
+            self.templates[name],
+            threshold
+        )
+
+    def scaled_find_template(self, name, image=None, threshold=0.9, scales=[1.0, 0.9, 1.1]):
+        if image is None:
+            if self.frame is None:
+                self.refresh_frame()
+
+            image = self.frame
+
+        initial_template = self.templates[name]
+        for scale in scales:
+            scaled_template = cv2.resize(initial_template, (0,0), fx=scale, fy=scale)
+            matches = self.match_template(
+                image,
+                scaled_template,
+                threshold
+            )
+            if np.shape(matches)[1] >= 1:
+                return matches
+        return matches
+
+    def refresh_frame(self):
+        self.frame = self.take_screenshot()
+
+imBGR = cv2.imread('prova.jpg')
+im = cv2.cvtColor(imBGR, cv2.COLOR_BGR2RGB)
+imHSV = cv2.cvtColor(imBGR, cv2.COLOR_BGR2HSV)
+imgray = cv2.cvtColor(imBGR, cv2.COLOR_BGR2GRAY)
+
+def locator(img, ob):
+    result = cv2.matchTemplate(ob, img, cv2.TM_SQDIFF_NORMED)
+    mn,_,mnLoc,_ = cv2.minMaxLoc(result)
+    print(mn, mnLoc)
+    return mnLoc
+
+
+def highlighter(img, mnLoc, ob):
+    MPx,MPy = mnLoc
+    trows,tcols = small_image.shape[:2]
+    return cv2.rectangle(img, (MPx,MPy),(MPx+tcols,MPy+trows),(255,0,0),2)
+
+def aaa(im):
+    plt.imshow(im)
+    plt.show()
+
+
 
 def show_by_its_eyes(img_in_np_array, title='q to escape'):
     cv2.imshow(title, img_in_np_array)
@@ -12,7 +109,7 @@ def show_by_its_eyes(img_in_np_array, title='q to escape'):
         cv2.waitKey(1)
 
 def takes_screenshots(top_left_corner_and_size):
-    with mss.mss() as sct:
+    with mss() as sct:
         monitor = {"top": top_left_corner_and_size[0],
                    "left": top_left_corner_and_size[1],
                    "width": top_left_corner_and_size[2],
@@ -78,39 +175,3 @@ if __name__ == "__main__":
     # import numpy as np
     # import sys
     #%matplotlib inline
-    im = cv2.imread('prova.jpg')
-    # im = cv2.imread('IMG_FILENAME',0)
-    h,w = im.shape[:2]
-    print(im.shape)
-    plt.imshow(im,cmap='gray')
-    plt.show()
-
-    hsv = cv2.cvtColor(im, cv2.COLOR_BGR2HSV)
-    plt.imshow(hsv)
-    plt.show()
-    lower = np.array([0, 0, 218])
-    upper = np.array([157, 54, 255])
-    mask = cv2.inRange(hsv, lower, upper)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5,3))
-    dilate = cv2.dilate(mask, kernel, iterations=5)
-    cnts = cv2.findContours(dilate, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-    for c in cnts:
-        x,y,w,h = cv2.boundingRect(c)
-        ar = w / float(h)
-        if ar < 5:
-            cv2.drawContours(dilate, [c], -1, (0,0,0), -1)
-    result = 255 - cv2.bitwise_and(dilate, mask)
-    # plt.imshow(result,cmap='gray')
-    # plt.show()
-    data = pytesseract.image_to_string(result, lang='eng',config='--psm 6')
-    print(data)
-
-    # show_by_its_eyes(psc)
-    # # captch_ex(psc)
-    # img2gray = cv2.cvtColor(psc, cv2.COLOR_BGR2GRAY)
-    # show_by_its_eyes(img2gray)
-    #
-    # ret, mask = cv2.threshold(img2gray, 180, 255, cv2.THRESH_BINARY)
-    # # image_final = cv2.bitwise_and(img2gray, img2gray, mask=mask)
-    # # ret, new_img = cv2.threshold(image_final, 180, 255, cv2.THRESH_BINARY)
